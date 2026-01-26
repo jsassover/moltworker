@@ -113,6 +113,13 @@ EOFNODE
 echo "Starting Clawdbot Gateway..."
 echo "Gateway will be available on port 18789"
 
+# Clean up any stale gateway processes and lock files
+# This handles cases where a previous gateway didn't shut down cleanly
+pkill -f "clawdbot gateway" 2>/dev/null || true
+rm -f /tmp/clawdbot-gateway.lock 2>/dev/null || true
+rm -f /root/.clawdbot/gateway.lock 2>/dev/null || true
+sleep 1  # Give processes time to exit
+
 # Set API keys as environment variables (clawdbot reads them from env)
 # Start the gateway (blocking)
 # Use provided token or generate a random one
