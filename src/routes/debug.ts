@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { findExistingMoltbotProcess } from '../gateway';
+import puppeteer from '@cloudflare/puppeteer';
 
 /**
  * Debug routes for inspecting container state
@@ -388,6 +389,71 @@ debug.get('/container-config', async (c) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return c.json({ error: errorMessage }, 500);
+  }
+});
+
+// GET /debug/browser-test - Test browser rendering by taking a screenshot
+debug.get('/browser-test', async (c) => {
+  const url = c.req.query('url') || 'https://example.com';
+
+  if (!c.env.BROWSER) {
+    return c.json({ error: 'BROWSER binding not configured' }, 500);
+  }
+
+  let browser;
+  try {
+    const startTime = Date.now();
+
+    // Launch browser
+    browser = await puppeteer.launch(c.env.BROWSER);
+    const launchTime = Date.now() - startTime;
+
+    // Create new page
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 720 });
+
+    // Navigate to URL
+    const navStart = Date.now();
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    const navTime = Date.now() - navStart;
+
+    // Get page title
+    const title = await page.title();
+
+    // Take screenshot
+    const screenshotStart = Date.now();
+    const screenshot = await page.screenshot({ encoding: 'base64' });
+    const screenshotTime = Date.now() - screenshotStart;
+
+    await browser.close();
+
+    // Return as JSON with base64 image
+    const format = c.req.query('format');
+    if (format === 'image') {
+      const buffer = Buffer.from(screenshot as string, 'base64');
+      return new Response(buffer, {
+        headers: { 'Content-Type': 'image/png' },
+      });
+    }
+
+    return c.json({
+      success: true,
+      url,
+      title,
+      timing: {
+        browserLaunch: `${launchTime}ms`,
+        navigation: `${navTime}ms`,
+        screenshot: `${screenshotTime}ms`,
+        total: `${Date.now() - startTime}ms`,
+      },
+      screenshot: `data:image/png;base64,${screenshot}`,
+    });
+  } catch (error) {
+    if (browser) {
+      try { await browser.close(); } catch {}
+    }
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: errorMessage, url }, 500);
   }
 });
 
